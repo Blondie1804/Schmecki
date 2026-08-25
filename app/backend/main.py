@@ -32,8 +32,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import claude_recipe
-import tiktok
-import transcribe
+from . import tiktok
+from . import transcribe
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
