@@ -1,0 +1,23 @@
+# Schmecki - Dependencies
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6      # Video-Upload
+
+# API-Key aus der .env lesen
+python-dotenv>=1.0.0
+
+# Claude API (Structured Outputs via messages.parse)
+# 1.x ist Pflicht - messages.parse mit output_format gibt es erst dort
+anthropic>=1.0.0
+
+# TikTok-oEmbed abfragen
+httpx>=0.27.0
+
+# Transkription - lokal, kein externer Dienst.
+# faster-whisper bringt PyAV mit und dekodiert MP4/MOV/WEBM ohne separates ffmpeg.
+faster-whisper>=1.0.0
+
+# Standbild aus dem Video + Bilder verkleinern
+pillow>=10.0.0

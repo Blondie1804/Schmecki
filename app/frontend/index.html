@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schmecki – dein TikTok-Kochbuch</title>
+<meta name="description" content="Aus TikTok wird Rezeptliebe: Rezepte sammeln, Portionen umrechnen, Einkaufsliste und Wochenplan.">
+<meta name="theme-color" content="#e8879c">
+<link rel="manifest" href="assets/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍓</text></svg>">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Sidebar: ab Tablet-Breite sichtbar -->
+  <aside class="sidebar">
+    <a class="logo" href="#/" aria-label="Schmecki Startseite">Schmecki</a>
+
+    <nav class="seiten-nav" aria-label="Hauptnavigation">
+      <a href="#/" data-route="start">
+        <span class="nav-icon" aria-hidden="true">🏠</span><span class="nav-text">Home</span>
+      </a>
+      <a href="#/rezepte" data-route="rezepte">
+        <span class="nav-icon" aria-hidden="true">📖</span><span class="nav-text">Rezepte</span>
+      </a>
+      <a href="#/liste" data-route="liste">
+        <span class="nav-icon" aria-hidden="true">🛒</span><span class="nav-text">Einkaufsliste</span>
+        <span class="nav-badge" data-badge="liste" hidden></span>
+      </a>
+      <a href="#/plan" data-route="plan">
+        <span class="nav-icon" aria-hidden="true">📅</span><span class="nav-text">Wochenplan</span>
+      </a>
+      <a href="#/favoriten" data-route="favoriten">
+        <span class="nav-icon" aria-hidden="true">❤️</span><span class="nav-text">Favoriten</span>
+      </a>
+      <a href="#/vorrat" data-route="vorrat">
+        <span class="nav-icon" aria-hidden="true">🧄</span><span class="nav-text">Vorrat</span>
+      </a>
+      <a href="#/wuerfeln" data-route="wuerfeln">
+        <span class="nav-icon" aria-hidden="true">🎲</span><span class="nav-text">Was koche ich?</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-fuss">
+      <button type="button" class="ikon-knopf" data-aktion="einstellungen" title="Einstellungen">
+        <span aria-hidden="true">⚙️</span><span class="nav-text">Einstellungen</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="haupt">
+    <header class="kopf">
+      <a class="logo logo-mobil" href="#/">Schmecki</a>
+      <div class="kopf-aktionen">
+        <button type="button" class="ikon-knopf" data-aktion="thema" title="Hell / Dunkel umschalten">
+          <span aria-hidden="true" data-thema-icon>🌙</span>
+        </button>
+        <button type="button" class="ikon-knopf nur-mobil" data-aktion="einstellungen" title="Einstellungen">
+          <span aria-hidden="true">⚙️</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="view" tabindex="-1"></main>
+  </div>
+
+  <!-- Bottom-Nav: nur auf dem Handy -->
+  <nav class="bottom-nav" aria-label="Navigation">
+    <a href="#/" data-route="start"><span aria-hidden="true">🏠</span><span>Home</span></a>
+    <a href="#/rezepte" data-route="rezepte"><span aria-hidden="true">📖</span><span>Rezepte</span></a>
+    <a href="#/liste" data-route="liste">
+      <span aria-hidden="true">🛒</span><span>Liste</span>
+      <span class="nav-badge" data-badge="liste" hidden></span>
+    </a>
+    <a href="#/plan" data-route="plan"><span aria-hidden="true">📅</span><span>Plan</span></a>
+    <a href="#/favoriten" data-route="favoriten"><span aria-hidden="true">❤️</span><span>Favoriten</span></a>
+  </nav>
+
+</div>
+
+<button type="button" class="fab" data-aktion="import" title="Rezept hinzufügen" aria-label="Rezept hinzufügen">
+  <span aria-hidden="true">+</span>
+</button>
+
+<div id="modal-schicht" class="modal-schicht" hidden></div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
