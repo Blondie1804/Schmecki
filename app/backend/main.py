@@ -31,7 +31,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-import claude_recipe
+from . import claude_recipe
 import tiktok
 import transcribe
 
