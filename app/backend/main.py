@@ -25,15 +25,15 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import claude_recipe
-from . import tiktok
-from . import transcribe
+import claude_recipe
+import tiktok
+import transcribe
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
@@ -169,6 +169,64 @@ async def api_recipe(anfrage: RezeptAnfrage):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         logger.exception("Rezept-Analyse fehlgeschlagen")
+        raise HTTPException(status_code=500, detail="Bei der Analyse ist etwas schiefgegangen.")
+
+    return rezept
+
+
+@app.post("/api/recipe/bilder")
+async def api_recipe_bilder(
+    bilder: list[UploadFile] = File(...),
+    hinweis: str = Form(""),
+):
+    """
+    Fotos -> strukturiertes Rezept (Claude mit Bildern).
+
+    Fuer Rezeptkarten (HelloFresh & Co.), Kochbuchseiten und Screenshots.
+    Mehrere Bilder gelten als Seiten EINES Rezepts.
+
+    Die Bilder werden nur durchgereicht, nicht abgelegt: sie gehen an die Claude
+    API und danach aus dem Speicher. Das Rezeptbild speichert der Browser selbst.
+    """
+    if not claude_recipe.api_key_vorhanden():
+        raise HTTPException(
+            status_code=503,
+            detail="Es ist kein API-Key hinterlegt. Trag ihn in app/.env ein und starte neu.",
+        )
+
+    if len(bilder) > claude_recipe.MAX_BILDER:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Das sind {len(bilder)} Bilder - erlaubt sind "
+                   f"{claude_recipe.MAX_BILDER}.",
+        )
+
+    rohdaten = []
+    for datei in bilder:
+        inhalt = await datei.read()
+        if not inhalt:
+            continue
+        if len(inhalt) > claude_recipe.MAX_BILD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"'{datei.filename}' ist größer als "
+                       f"{claude_recipe.MAX_BILD_BYTES // (1024 * 1024)} MB.",
+            )
+        rohdaten.append(inhalt)
+
+    if not rohdaten:
+        raise HTTPException(status_code=400, detail="Die Bilder sind leer.")
+
+    try:
+        # Bildaufbereitung und API-Aufruf blockieren - beides in den Threadpool
+        rezept = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: claude_recipe.rezept_aus_bildern(rohdaten, hinweis),
+        )
+    except claude_recipe.RezeptError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Bild-Analyse fehlgeschlagen")
         raise HTTPException(status_code=500, detail="Bei der Analyse ist etwas schiefgegangen.")
 
     return rezept
@@ -361,10 +419,15 @@ class FrischeStatics(StaticFiles):
 
     async def get_response(self, path: str, scope):
         antwort = await super().get_response(path, scope)
-        if path.lower().endswith(CODE_ENDUNGEN):
-            antwort.headers["Cache-Control"] = "no-store, max-age=0"
-        else:
-            antwort.headers["Cache-Control"] = "public, max-age=86400"
+
+        # Der Pfad "/" und jeder Verzeichnispfad liefern die index.html, haben
+        # aber keine Dateiendung - ohne diese Zeile bekaeme die App-Huelle einen
+        # Tages-Cache und man laedt nach einer Aenderung die alte Seite.
+        ist_code = path.lower().endswith(CODE_ENDUNGEN) or "." not in Path(path).name
+
+        antwort.headers["Cache-Control"] = (
+            "no-store, max-age=0" if ist_code else "public, max-age=86400"
+        )
         return antwort
 
 

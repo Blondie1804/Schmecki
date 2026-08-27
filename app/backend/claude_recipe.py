@@ -153,6 +153,62 @@ UNSICHERHEITEN sammelst du ehrlich: geschätzte Portionszahl, unklare Menge, ein
 der nur zu sehen und nicht zu hören war. Ist alles klar, bleibt die Liste leer."""
 
 
+# Fuer Fotos gelten dieselben Grundregeln, aber die Fehlerquellen sind andere:
+# gedruckte Karten sind praezise, dafuer kommen Schraeglage, Anschnitt und
+# mehrseitige Vorlagen dazu.
+SYSTEM_PROMPT_BILD = """Du bist der Rezeptkoch von Schmecki, einem privaten Kochbuch. Du \
+bekommst ein oder mehrere Fotos: eine Rezeptkarte (zum Beispiel von HelloFresh oder \
+Marley Spoon), eine Kochbuchseite, einen handgeschriebenen Zettel oder einen Screenshot. \
+Daraus machst du ein sauberes, nachkochbares Rezept.
+
+Wie du arbeitest:
+
+ALLE BILDER GEHÖREN ZU EINEM REZEPT. Rezeptkarten haben zwei Seiten - vorne das Foto und \
+die Zutaten, hinten die Arbeitsschritte. Kochbuchseiten gehen über zwei Seiten. Du baust aus \
+allen Fotos zusammen EIN Rezept, nicht mehrere. Steht dieselbe Zutat auf zwei Fotos, zählst \
+du sie einmal.
+
+LIES AB, WAS DASTEHT. Auf einer gedruckten Karte stehen Mengen und Portionen exakt - übernimm \
+sie genau so, ohne Umrechnen und ohne Aufrunden. Erfinde nichts dazu. Ist eine Stelle \
+unleserlich, angeschnitten, verdeckt oder unscharf, setzt du menge auf null, schreibst \
+"nicht lesbar" in den hinweis und notierst es in unsicherheiten. Rate keine Zahl.
+
+PORTIONEN stehen auf Rezeptkarten fast immer oben ("2 Portionen", "für 4 Personen"). Nimm \
+diese Zahl. Steht sie nirgends, schätze aus den Mengen und vermerke das in unsicherheiten.
+
+VORRATSZUTATEN gehören mit ins Rezept. Rezeptkarten trennen zwischen dem, was in der Box \
+liegt, und dem, was man selbst hat - Überschriften wie "Nicht vergessen", "Aus deinem \
+Vorrat", "Außerdem brauchst du" oder "Pantry items". Diese Zutaten (Öl, Salz, Pfeffer, \
+Butter, Zucker, Essig) nimmst du in die Zutatenliste auf, mit skalierbar false.
+
+WAS DU WEGLÄSST: Nährwerttabellen, Kalorien, Allergenhinweise, Barcodes, Artikelnummern, \
+Kundenservice-Texte, Werbung, QR-Codes und Wochennummern. Das ist kein Rezept.
+
+TITEL nimmst du von der Karte. Marketing-Beiwerk wie "Familienliebling" oder "Neu!" lässt du \
+weg, den Gerichtnamen behältst du. Untertitel wie "mit Kirschtomaten und Basilikum" darfst du \
+in die beschreibung übernehmen.
+
+SCHRITTE sind auf Karten nummeriert. Halte die Reihenfolge ein und schreib sie in der \
+Du-Form aus. Zeiten und Temperaturen gehören zusätzlich in ihre eigenen Felder. Die kleinen \
+Bilder neben den Schritten zeigen oft, was der Text nicht sagt - was du dort klar erkennst, \
+darfst du ergänzen.
+
+IST DAS ÜBERHAUPT EIN REZEPT? Zeigt das Foto nur ein Essen ohne Text, eine leere Seite, \
+etwas völlig anderes oder ist es so unscharf, dass du die Zutaten nicht lesen kannst, dann \
+setzt du reicht_aus auf false und schreibst in grund freundlich, was das Problem ist - zum \
+Beispiel "Auf dem Foto ist nur das fertige Gericht zu sehen, keine Zutatenliste" oder "Das \
+Bild ist zu unscharf, um die Mengen zu lesen". Rate in diesem Fall kein Rezept zusammen. \
+Ein Foto von einem Teller Pasta ist kein Rezept.
+
+SPRACHE ist Deutsch, auch wenn die Karte englisch ist. Etablierte Gerichtnamen bleiben.
+
+EINHEITEN, SKALIERBAR und BEREICH behandelst du wie bei jedem anderen Rezept: Einheiten \
+vereinheitlicht auf g, kg, ml, l, EL, TL, Stück, Prise, Zehe, Bund, Dose, Packung, Scheibe; \
+Gewürze und alles "nach Geschmack" mit skalierbar false; bereich ist der Supermarktbereich \
+für die Einkaufsliste (Sahne und Käse kuehlung, Nudeln und Konserven vorrat, Mehl und Zucker \
+backen, Salz und Pfeffer gewuerze, frische Kräuter obst-gemuese)."""
+
+
 _client: Optional[anthropic.Anthropic] = None
 
 
@@ -247,6 +303,21 @@ def rezept_aus_text(
     if zusatz.strip():
         inhalt += "\n\nZusaetzlich die Caption des Videos:\n\n" + zusatz.strip()[:2000]
 
+    return _claude_fragen(inhalt, SYSTEM_PROMPT, "Text")
+
+
+def _claude_fragen(inhalt, system_prompt: str, quelle_beschreibung: str) -> dict:
+    """
+    Der eigentliche API-Aufruf - gemeinsam fuer Text und Bilder.
+
+    Args:
+        inhalt: String oder Liste von Content-Bloecken fuer die Nutzer-Nachricht
+        system_prompt: SYSTEM_PROMPT oder SYSTEM_PROMPT_BILD
+        quelle_beschreibung: nur fuer Fehlermeldungen und das Log ("Text", "Fotos")
+
+    Returns:
+        dict des Rezept-Modells
+    """
     client = _get_client()
     modell = modell_name()
 
@@ -255,7 +326,7 @@ def rezept_aus_text(
             model=modell,
             max_tokens=16000,
             thinking={"type": "adaptive"},
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[{"role": "user", "content": inhalt}],
             output_format=Rezept,
         )
@@ -283,14 +354,14 @@ def rezept_aus_text(
     if antwort.stop_reason == "refusal":
         logger.warning(f"Claude hat abgelehnt: {antwort.stop_details}")
         raise RezeptError(
-            "Claude wollte diesen Text nicht verarbeiten. Wenn es wirklich um Essen "
+            "Claude wollte das nicht verarbeiten. Wenn es wirklich um Essen "
             "geht, probier es mit einem anderen Ausschnitt."
         )
 
     if antwort.stop_reason == "max_tokens":
         raise RezeptError(
-            "Die Antwort wurde abgeschnitten - der Text war zu lang. Kuerze ihn auf "
-            "den Rezept-Teil."
+            "Die Antwort wurde abgeschnitten - die Vorlage war zu umfangreich. "
+            "Beschränke sie auf den Rezept-Teil."
         )
 
     rezept: Optional[Rezept] = antwort.parsed_output
@@ -301,11 +372,147 @@ def rezept_aus_text(
     _nachbessern(daten)
 
     logger.info(
-        f"Rezept '{daten['titel']}' erzeugt: {len(daten['zutaten'])} Zutaten, "
-        f"{len(daten['schritte'])} Schritte, reicht_aus={daten['reicht_aus']}, "
+        f"Rezept '{daten['titel']}' aus {quelle_beschreibung}: "
+        f"{len(daten['zutaten'])} Zutaten, {len(daten['schritte'])} Schritte, "
+        f"reicht_aus={daten['reicht_aus']}, "
         f"Tokens {antwort.usage.input_tokens}/{antwort.usage.output_tokens}"
     )
     return daten
+
+
+# ---------------------------------------------------------------- Fotos
+
+# Claude skaliert groessere Bilder ohnehin herunter; 1568 px auf der langen Kante
+# ist der Punkt, ab dem nichts mehr dazugewonnen wird - nur Tokens gekostet.
+MAX_BILD_KANTE = 1568
+
+# Eine Rezeptkarte hat zwei Seiten, ein Kochbuch-Rezept selten mehr als vier.
+MAX_BILDER = 6
+
+MAX_BILD_BYTES = 12 * 1024 * 1024
+
+
+def rezept_aus_bildern(bilder: list[bytes], hinweis: str = "") -> dict:
+    """
+    Macht aus Fotos ein strukturiertes Rezept.
+
+    Gedacht fuer Rezeptkarten (HelloFresh & Co.), Kochbuchseiten, Screenshots
+    und handgeschriebene Zettel. Mehrere Bilder gelten als Seiten EINES Rezepts -
+    Vorder- und Rueckseite einer Karte gehoeren zusammen.
+
+    Args:
+        bilder: Rohdaten der Bilder, in der Reihenfolge der Seiten
+        hinweis: optionaler Zusatz der Nutzerin ("Seite 2 ist die Rueckseite")
+
+    Returns:
+        dict des Rezept-Modells
+    """
+    if not bilder:
+        raise RezeptError("Es ist kein Bild angekommen.")
+
+    if len(bilder) > MAX_BILDER:
+        raise RezeptError(
+            f"Das sind {len(bilder)} Bilder - erlaubt sind {MAX_BILDER}. "
+            "Nimm die Seiten, auf denen Zutaten und Zubereitung stehen."
+        )
+
+    bloecke = []
+
+    # Bei mehreren Seiten hilft eine Beschriftung, damit Claude die Reihenfolge kennt
+    for nummer, rohdaten in enumerate(bilder, start=1):
+        daten, medientyp = _bild_vorbereiten(rohdaten, nummer)
+
+        if len(bilder) > 1:
+            bloecke.append({"type": "text", "text": f"Bild {nummer} von {len(bilder)}:"})
+
+        bloecke.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": medientyp, "data": daten},
+        })
+
+    aufgabe = (
+        "Das sind Fotos einer Rezeptvorlage - eine Rezeptkarte, eine Kochbuchseite, "
+        "ein Zettel oder ein Screenshot. Bau daraus ein Rezept."
+        if len(bilder) > 1 else
+        "Das ist das Foto einer Rezeptvorlage - eine Rezeptkarte, eine Kochbuchseite, "
+        "ein Zettel oder ein Screenshot. Bau daraus ein Rezept."
+    )
+    if len(bilder) > 1:
+        aufgabe += (
+            f" Alle {len(bilder)} Bilder gehören zu EINEM Rezept "
+            "(zum Beispiel Vorder- und Rückseite einer Karte)."
+        )
+    if hinweis.strip():
+        aufgabe += f"\n\nHinweis von der Nutzerin: {hinweis.strip()[:500]}"
+
+    bloecke.append({"type": "text", "text": aufgabe})
+
+    return _claude_fragen(
+        bloecke,
+        SYSTEM_PROMPT_BILD,
+        f"{len(bilder)} Foto{'s' if len(bilder) > 1 else ''}",
+    )
+
+
+def _bild_vorbereiten(rohdaten: bytes, nummer: int) -> tuple[str, str]:
+    """
+    Bild fuer die API vorbereiten: lesen, drehen, verkleinern, als JPEG kodieren.
+
+    Handyfotos bringen ihre Ausrichtung als EXIF-Angabe mit - ohne das Drehen
+    liegt die Rezeptkarte quer und Claude liest schlechter.
+
+    Returns:
+        (base64-String, Medientyp)
+    """
+    import base64
+    import io
+
+    if not rohdaten:
+        raise RezeptError(f"Bild {nummer} ist leer.")
+
+    if len(rohdaten) > MAX_BILD_BYTES:
+        raise RezeptError(
+            f"Bild {nummer} ist größer als {MAX_BILD_BYTES // (1024 * 1024)} MB."
+        )
+
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as e:
+        raise RezeptError(
+            "Pillow ist nicht installiert. Bitte 'pip install -r requirements.txt' ausführen."
+        ) from e
+
+    # iPhone-Fotos sind oft HEIC. pillow-heif haengt sich als Plugin in Pillow ein;
+    # fehlt es, faellt das unten in die freundliche Fehlermeldung.
+    try:
+        import pillow_heif
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        pass
+
+    try:
+        bild = Image.open(io.BytesIO(rohdaten))
+        bild = ImageOps.exif_transpose(bild)
+        bild = bild.convert("RGB")
+    except Exception as e:
+        raise RezeptError(
+            f"Bild {nummer} konnte ich nicht lesen. JPEG, PNG und WebP gehen sicher - "
+            "bei einem iPhone-Foto (HEIC) exportiere es als JPEG."
+        ) from e
+
+    if max(bild.size) > MAX_BILD_KANTE:
+        bild.thumbnail((MAX_BILD_KANTE, MAX_BILD_KANTE), Image.LANCZOS)
+
+    puffer = io.BytesIO()
+    bild.save(puffer, format="JPEG", quality=88, optimize=True)
+    daten = puffer.getvalue()
+
+    logger.info(
+        f"Bild {nummer}: {bild.size[0]}x{bild.size[1]} px, "
+        f"{len(rohdaten) / 1024:.0f} KB -> {len(daten) / 1024:.0f} KB"
+    )
+
+    return base64.b64encode(daten).decode("ascii"), "image/jpeg"
 
 
 def _nachbessern(daten: dict) -> None:
@@ -319,7 +526,7 @@ def _nachbessern(daten: dict) -> None:
     if not daten.get("portionen") or daten["portionen"] < 1:
         daten["portionen"] = 2
         daten.setdefault("unsicherheiten", []).append(
-            "Die Portionszahl stand nicht im Video - ich habe 2 angenommen."
+            "Die Portionszahl stand nicht in der Vorlage - ich habe 2 angenommen."
         )
 
     # Ohne Zutaten oder Schritte ist es kein Rezept, egal was das Modell meint
@@ -327,7 +534,7 @@ def _nachbessern(daten: dict) -> None:
         daten["reicht_aus"] = False
         if not daten.get("grund"):
             daten["grund"] = (
-                "Aus diesem Text kriege ich kein vollständiges Rezept - "
+                "Daraus kriege ich kein vollständiges Rezept - "
                 "es fehlen Zutaten oder Arbeitsschritte."
             )
 

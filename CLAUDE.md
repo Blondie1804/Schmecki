@@ -7,11 +7,13 @@ Läuft lokal. Kein Deployment, kein Account, keine Datenbank.
 
 ## Grundidee
 
-Der Server macht nur die drei Dinge, die im Browser nicht gehen:
+Der Server macht nur die Dinge, die im Browser nicht gehen:
 
 1. einen TikTok-Link auflösen (oEmbed)
 2. ein hochgeladenes Video lokal transkribieren (faster-whisper)
 3. Text von Claude in ein Rezept verwandeln
+4. Fotos von Claude lesen lassen – Rezeptkarten (HelloFresh & Co.),
+   Kochbuchseiten, Screenshots, handgeschriebene Zettel
 
 Alles andere – Kochbuch, Portionsrechner, Einkaufsliste, Wochenplan, Würfeln,
 Vorrat – passiert im Browser und funktioniert auch ohne laufenden Server, sobald
@@ -68,6 +70,7 @@ Siehe [README.md](README.md). Kurzfassung: `cd app` und `.\start.ps1` bzw.
 | `/` | GET | App-Shell |
 | `/api/tiktok` | POST | Link → Caption, Creator, Vorschaubild (oEmbed) |
 | `/api/recipe` | POST | Text/Caption/Transkript → strukturiertes Rezept |
+| `/api/recipe/bilder` | POST | Fotos (multipart, 1–6 Stück) → strukturiertes Rezept |
 | `/api/transcribe` | POST | Video annehmen, Job starten → `job_id` |
 | `/api/transcribe/{job_id}` | GET | Fortschritt, Transkript, Standbild |
 | `/health` | GET | API-Key vorhanden?, Modell, aktive Jobs |
@@ -90,6 +93,22 @@ Nutzerin geschrieben und wird im Frontend unverändert angezeigt.
 `portionenOriginal` ist der Bezugswert der Mengen und ändert sich nie.
 `portionen` ist die aktuell angezeigte Zahl. Der Portionsrechner rechnet immer
 vom Original aus, nicht vom letzten Stand – sonst summieren sich Rundungsfehler.
+
+## Zwei Prompts, ein Schema
+
+`claude_recipe.py` hat zwei System-Prompts, aber nur ein Pydantic-Modell (`Rezept`):
+
+- `SYSTEM_PROMPT` für Text – Captions und Transkripte. Die Fehlerquelle ist
+  Lückenhaftigkeit: Mengen fehlen, Whisper verhört sich.
+- `SYSTEM_PROMPT_BILD` für Fotos. Gedruckte Karten sind exakt, dafür kommen
+  Schräglage, Anschnitt und mehrseitige Vorlagen dazu. Der Prompt sagt
+  ausdrücklich, dass alle Bilder zu **einem** Rezept gehören (Karten haben vorne
+  die Zutaten, hinten die Schritte), dass Vorratszutaten aus dem Kasten
+  "Nicht vergessen" mit ins Rezept gehören und dass Nährwerttabellen,
+  Barcodes und Werbung wegfallen.
+
+Beide gehen durch `_claude_fragen()`. Wenn du das Schema änderst, ändere beide
+Prompts mit – sonst füllt einer der Wege ein Feld nie.
 
 ## Gotchas
 
@@ -146,6 +165,31 @@ vom Original aus, nicht vom letzten Stand – sonst summieren sich Rundungsfehle
 - **Der API-Key gehört in `app/.env` und nirgendwo sonst.** Nie ins Frontend,
   nie in ein Repository. Alle Claude-Aufrufe laufen über den lokalen Server.
 
+- **Der Port ist Teil der Identität der Daten – Port niemals leichtfertig
+  ändern.** Browser trennen `localStorage` und IndexedDB nach Herkunft, und die
+  Portnummer gehört zur Herkunft. `http://localhost:8010` und
+  `http://localhost:8032` sind zwei verschiedene Websites mit getrennten Daten.
+  Das ist schon einmal teuer geworden: beim Entwickeln wurde der Port dreimal
+  hochgezählt, um den Browser-Cache zu umgehen – jedes Mal stand ein leeres
+  Kochbuch da, und die Rezepte lagen unerreichbar unter dem alten Port.
+
+  **Wenn du den Cache umgehen willst, nimm nicht den Port.** `FrischeStatics` in
+  `main.py` schickt für Code schon `no-store`; hilft das nicht, im Browser
+  `fetch(pfad, {cache: 'reload'})` für die betroffenen Dateien aufrufen und dann
+  neu laden. Der Port bleibt 8010.
+
+  Dagegen abgesichert ist die App über zwei Banner (`hinweiseZeichnen()` in
+  `app.js`): ein Port-Hinweis, wenn Schmecki auf einem anderen Port als 8010
+  läuft **und** dort noch keine eigenen Rezepte liegen, und eine
+  Backup-Erinnerung ab fünf ungesicherten eigenen Rezepten. Beide sind für die
+  Sitzung wegklickbar. Erkennen kann die App fremde Ports nicht – sie kann nur
+  warnen, denn eine Seite sieht den Speicher anderer Herkünfte nie.
+
+- **`Cache-Control` für `/` braucht die Sonderbehandlung.** `FrischeStatics`
+  entscheidet an der Dateiendung, und `/` sowie jeder Verzeichnispfad haben
+  keine – ohne die Prüfung `"." not in Path(path).name` bekäme die `index.html`
+  einen Tages-Cache.
+
 ## Bewusst nicht gebaut
 
 - **Automatischer TikTok-Download.** Der Weg über die oEmbed-Caption plus selbst
@@ -153,17 +197,29 @@ vom Original aus, nicht vom letzten Stand – sonst summieren sich Rundungsfehle
   nächsten TikTok-Änderung kaputtgeht.
 - **Service Worker.** Das `manifest.json` macht die App installierbar; ein
   Service Worker würde beim Entwickeln nur Cache-Ärger machen.
-- Instagram/YouTube, Rezept aus Foto, Allergien und Zutaten-Ersatz,
-  Sprachsteuerung, Kochmodus mit Timern – alles später möglich, alles ohne
-  Umbau anschließbar.
+- Instagram/YouTube, Allergien und Zutaten-Ersatz, Sprachsteuerung, Kochmodus
+  mit Timern – alles später möglich, alles ohne Umbau anschließbar.
 
 ## Stand
 
 Die Wege über TikTok-Link (oEmbed), Fehlerpfade, Kochbuch, Portionsrechner,
 Einkaufsliste, Wochenplan, Würfeln, Vorrat, Backup und Dark Mode sind geprüft.
 
-**Noch nicht mit echtem API-Key gelaufen:** `/api/recipe` (die Claude-Analyse)
-und damit auch das Ende des Video-Wegs. Beim ersten echten Import darauf achten,
-ob `messages.parse` mit `thinking={"type": "adaptive"}` und `output_format`
-durchgeht – falls nicht, ist der dokumentierte Rückfallweg `messages.create` mit
+Vom Foto-Weg ist alles geprüft außer dem Claude-Aufruf selbst:
+Mehrfachauswahl, Vorschau-Streifen mit Seitennummern, Entfernen, Einfügen aus
+der Zwischenablage, der multipart-Upload gegen den echten Server, die
+Fehlerdarstellung und das Behalten der Seiten bei "Nochmal versuchen".
+`_bild_vorbereiten` ist gegen echte Bilder getestet: ein 3024×4032-Handyfoto
+landet bei 1176×1568, EXIF-Drehung wird angewandt, leere und kaputte Dateien
+sowie zu große und zu viele Bilder werfen lesbare Meldungen.
+
+**Noch nicht mit echtem API-Key gelaufen:** `/api/recipe` und
+`/api/recipe/bilder` – also beide Claude-Analysen und damit das Ende des Video-
+und des Foto-Wegs. Beim ersten echten Import darauf achten, ob `messages.parse`
+mit `thinking={"type": "adaptive"}` und `output_format` durchgeht – falls nicht,
+ist der dokumentierte Rückfallweg `messages.create` mit
 `output_config={"format": {"type": "json_schema", ...}}`.
+
+Beim ersten Foto-Import lohnt ein Blick auf zwei Dinge: Übernimmt Claude die
+Portionszahl von der Karte statt zu schätzen, und landen die Zutaten aus
+"Nicht vergessen" mit in der Liste?

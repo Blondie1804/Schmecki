@@ -180,6 +180,12 @@ function quelleHtml(r) {
               <span>Beispielrezept von Schmecki - du kannst es bearbeiten oder löschen.</span>
             </div>`;
   }
+  if (q.art === 'foto') {
+    return `<div class="quelle-zeile"><span aria-hidden="true">📸</span>
+              <span>Von einem Foto abgelesen${q.caption ? ` · dein Hinweis: „${esc(q.caption)}"` : ''}</span>
+            </div>`;
+  }
+
   if (!q.url && !q.creator) return '';
 
   return `

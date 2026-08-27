@@ -6,7 +6,7 @@
  */
 
 import * as store from './store.js';
-import { toast, nachfragen, modalOeffnen, modalSchliessen, dateiSpeichern, dateiWaehlen } from './ui.js';
+import { esc, toast, nachfragen, modalOeffnen, modalSchliessen, dateiSpeichern, dateiWaehlen } from './ui.js';
 
 export function einstellungenOeffnen() {
   const thema = store.einstellungen().thema || 'system';
@@ -40,6 +40,13 @@ export function einstellungenOeffnen() {
         Nimm das Backup mit auf ein anderes Gerät oder sichere es, bevor du den
         Browser-Speicher leerst.
       </p>
+      <p class="feld-hilfe">
+        <strong>Diese Daten hängen an <code>${esc(location.origin)}</code>.</strong>
+        Der Browser trennt den Speicher nach Adresse, und die Portnummer gehört dazu -
+        startest du Schmecki mal auf einem anderen Port, ist das Kochbuch dort leer.
+        Das Backup ist davon unabhängig.
+        ${backupText()}
+      </p>
     </section>
 
     <section style="margin-top:24px">
@@ -56,6 +63,18 @@ export function einstellungenOeffnen() {
 
   serverStatusZeigen(modal);
   verdrahten(modal);
+}
+
+/** "Letztes Backup: ..." - oder ein Hinweis, dass noch keins existiert. */
+function backupText() {
+  const letztes = store.einstellungen().letztesBackup;
+  if (!letztes) return 'Bisher hast du kein Backup gespeichert.';
+
+  const datum = new Date(letztes.zeit);
+  const offen = store.eigeneRezepteAnzahl() - (letztes.anzahl ?? 0);
+  return `Letztes Backup: ${datum.toLocaleDateString('de-DE')} `
+       + `(${letztes.anzahl} eigene Rezepte).`
+       + (offen > 0 ? ` Seitdem ${offen} dazugekommen.` : '');
 }
 
 /** Kurz nachsehen, ob der Server einen API-Key hat - erklärt später Fehler. */
@@ -103,6 +122,8 @@ function verdrahten(modal) {
       const paket = await store.exportieren(mitBildern);
       const datum = new Date().toISOString().slice(0, 10);
       dateiSpeichern(`schmecki-backup-${datum}.json`, JSON.stringify(paket, null, 2));
+      // Merken, damit die Erinnerung wieder Ruhe gibt
+      store.backupGemacht();
       modalSchliessen();
       toast('Backup gespeichert', '💾');
       return;

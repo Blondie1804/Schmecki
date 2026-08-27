@@ -255,6 +255,16 @@ export const SEED_REZEPTE = [
  * Bewusst das übliche Grundsortiment - damit der Abgleich auf der Vorratsseite
  * beim ersten Öffnen etwas zu zeigen hat und nicht "da fehlt alles" meldet.
  */
+/**
+ * Die IDs der Beispielrezepte.
+ *
+ * Damit kann die App "hat sie schon eigene Rezepte?" beantworten - und das
+ * entscheidet, ob die Backup-Erinnerung und der Port-Hinweis überhaupt Sinn
+ * haben. Löscht Lisa ein Beispiel und legt später ein eigenes an, stimmt die
+ * Rechnung weiterhin, weil hier nur nach IDs geschaut wird.
+ */
+export const SEED_IDS = new Set(SEED_REZEPTE.map((r) => r.id));
+
 export const SEED_VORRAT = [
   'Pasta', 'Reis', 'Mehl', 'Zucker',
   'Ei', 'Milch', 'Butter', 'Sahne', 'Parmesan',

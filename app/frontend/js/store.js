@@ -11,7 +11,7 @@
  * Der Server bekommt von all dem nichts zu sehen.
  */
 
-import { SEED_REZEPTE, SEED_VORRAT } from './seed.js';
+import { SEED_REZEPTE, SEED_VORRAT, SEED_IDS } from './seed.js';
 
 const LS_KEY = 'schmecki.daten';
 const SCHEMA_VERSION = 1;
@@ -32,6 +32,9 @@ const LEER = () => ({
   einstellungen: {
     thema: 'system',   // 'system' | 'hell' | 'dunkel'
     geseedet: false,
+    // Wann zuletzt ein Backup gespeichert wurde und wie viele eigene Rezepte
+    // es damals gab. Grundlage für die Erinnerung: { zeit, anzahl }
+    letztesBackup: null,
   },
 });
 
@@ -219,6 +222,16 @@ export function favoritUmschalten(id) {
   return r.favorit;
 }
 
+/**
+ * Wie viele Rezepte hat Lisa selbst angelegt? (Beispiele zählen nicht.)
+ *
+ * Grundlage für die Backup-Erinnerung und den Port-Hinweis: eine App mit nur
+ * Beispielrezepten hat nichts zu verlieren und soll auch nicht mahnen.
+ */
+export function eigeneRezepteAnzahl() {
+  return daten.rezepte.filter((r) => !SEED_IDS.has(r.id)).length;
+}
+
 /** Alle Tags, die in den Rezepten vorkommen - nach Häufigkeit sortiert. */
 export function alleTags() {
   const zaehler = new Map();
@@ -294,6 +307,38 @@ export function einstellungen() {
 export function einstellungSetzen(schluessel, wert) {
   daten.einstellungen[schluessel] = wert;
   speichern();
+}
+
+// ---------------------------------------------------------------- Backup-Buchhaltung
+
+/** Ab so vielen ungesicherten eigenen Rezepten wird erinnert. */
+const BACKUP_SCHWELLE = 5;
+
+/** Nach einem Export merken, wie viel damit gesichert war. */
+export function backupGemacht() {
+  daten.einstellungen.letztesBackup = {
+    zeit: new Date().toISOString(),
+    anzahl: eigeneRezepteAnzahl(),
+  };
+  speichern();
+}
+
+/**
+ * Soll erinnert werden - und mit welcher Zahl?
+ *
+ * Erst ab BACKUP_SCHWELLE eigenen Rezepten, und nach einem Backup erst wieder,
+ * wenn genauso viele neue dazugekommen sind. Wer nie exportiert, wird also
+ * einmal bei 5 gefragt und dann bei 10, nicht bei jedem Rezept.
+ */
+export function backupFaellig() {
+  const eigene = eigeneRezepteAnzahl();
+  if (eigene < BACKUP_SCHWELLE) return null;
+
+  const letztes = daten.einstellungen.letztesBackup;
+  const ungesichert = eigene - (letztes?.anzahl ?? 0);
+  if (ungesichert < BACKUP_SCHWELLE) return null;
+
+  return { eigene, ungesichert, letztesBackup: letztes?.zeit || null };
 }
 
 // ---------------------------------------------------------------- Bilder (IndexedDB)

@@ -112,6 +112,74 @@ function themaUmschalten() {
 
 // ---------------------------------------------------------------- Zähler an der Liste
 
+// ---------------------------------------------------------------- Hinweise
+
+/**
+ * Der Port, auf dem start.ps1 / start.sh Schmecki startet.
+ *
+ * Warum das überhaupt eine Rolle spielt: Der Browser trennt localStorage und
+ * IndexedDB pro Herkunft - und die Portnummer gehört zur Herkunft dazu.
+ * http://localhost:8010 und http://localhost:8032 sind für ihn zwei
+ * verschiedene Websites mit getrennten Daten. Wer Schmecki mal auf einem
+ * anderen Port startet, sieht dort ein leeres Kochbuch und denkt, die Rezepte
+ * seien weg. Sie liegen aber noch unter dem alten Port.
+ */
+const STANDARD_PORT = '8010';
+
+/** Weggeklickte Hinweise gelten für diese Sitzung - nicht für immer. */
+const weggeklickt = new Set();
+
+function hinweiseZeichnen() {
+  const box = document.getElementById('hinweise');
+  if (!box) return;
+
+  const teile = [];
+
+  // 1. Port-Hinweis: nur wenn hier noch keine eigenen Rezepte liegen. Läuft
+  //    alles normal, will das niemand lesen.
+  const eigene = store.eigeneRezepteAnzahl();
+  const port = location.port;
+  if (!weggeklickt.has('port') && eigene === 0 && port && port !== STANDARD_PORT) {
+    teile.push(`
+      <div class="hinweis-banner" data-hinweis="port">
+        <span class="banner-emoji" aria-hidden="true">🔌</span>
+        <div class="banner-text">
+          <strong>Du bist auf Port ${ui.esc(port)}, normalerweise läuft Schmecki auf ${STANDARD_PORT}.</strong>
+          Rezepte hängen an der Adresse: was du auf einem anderen Port gespeichert
+          hast, ist hier nicht zu sehen - es ist aber auch nicht weg. Öffne den
+          alten Port, sichere dort ein Backup und lies es hier wieder ein.
+        </div>
+        <div class="banner-knoepfe">
+          <button type="button" class="knopf-2" data-aktion="einstellungen">Backup einlesen</button>
+          <button type="button" class="ikon-knopf" data-banner-zu="port" aria-label="Hinweis ausblenden">✕</button>
+        </div>
+      </div>`);
+  }
+
+  // 2. Backup-Erinnerung
+  const faellig = store.backupFaellig();
+  if (!weggeklickt.has('backup') && faellig) {
+    const seit = faellig.letztesBackup
+      ? `Dein letztes Backup ist von ${new Date(faellig.letztesBackup).toLocaleDateString('de-DE')}.`
+      : 'Du hast noch kein Backup gespeichert.';
+    teile.push(`
+      <div class="hinweis-banner sanft" data-hinweis="backup">
+        <span class="banner-emoji" aria-hidden="true">💾</span>
+        <div class="banner-text">
+          <strong>${faellig.eigene} eigene Rezepte - Zeit für ein Backup.</strong>
+          ${seit} Deine Rezepte liegen nur in diesem Browser. Leert jemand die
+          Browserdaten, sind sie weg.
+        </div>
+        <div class="banner-knoepfe">
+          <button type="button" class="knopf" data-aktion="einstellungen">Backup speichern</button>
+          <button type="button" class="ikon-knopf" data-banner-zu="backup" aria-label="Später">✕</button>
+        </div>
+      </div>`);
+  }
+
+  box.innerHTML = teile.join('');
+}
+
 function badgeAktualisieren() {
   const offen = store.liste().filter((e) => !e.erledigt).length;
   for (const el of document.querySelectorAll('[data-badge="liste"]')) {
@@ -125,6 +193,13 @@ function badgeAktualisieren() {
 function verdrahten() {
   // Ein Klick-Horcher für alles mit data-aktion
   document.addEventListener('click', (e) => {
+    const bannerZu = e.target.closest('[data-banner-zu]');
+    if (bannerZu) {
+      weggeklickt.add(bannerZu.dataset.bannerZu);
+      hinweiseZeichnen();
+      return;
+    }
+
     const ziel = e.target.closest('[data-aktion], [data-modal-zu]');
     if (!ziel) return;
 
@@ -164,6 +239,7 @@ function verdrahten() {
 
   store.abonnieren((was) => {
     badgeAktualisieren();
+    hinweiseZeichnen();
     if (was === 'speicher-voll') {
       ui.toast('Der Speicher ist voll - lösch ein paar alte Rezepte.', '😬');
     }
@@ -175,6 +251,7 @@ function los() {
   themaAnwenden(store.einstellungen().thema || 'system');
   verdrahten();
   badgeAktualisieren();
+  hinweiseZeichnen();
   route();
 }
 
